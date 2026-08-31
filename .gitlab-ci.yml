@@ -1,8 +1,10 @@
-# Native multi-arch build of vakeworks/lean-checker: amd64 on a native amd64 runner, arm64 on the
-# GitLab SaaS arm64 runner -- each real hardware, NO qemu -- then a manifest combines them so
+# Native multi-arch build of vakeworks/lean-checker: amd64 on a native amd64 runner, arm64 on a
+# native arm64 runner -- each real hardware, NO qemu -- then a manifest combines them so
 # `docker pull vakeworks/lean-checker:v4.32.0` serves each student their own arch.
 #
 # CI/CD variables (Settings -> CI/CD -> Variables): DOCKERHUB_USER, DOCKERHUB_TOKEN (push creds).
+# NOTE: build:arm64 needs a runner tagged saas-linux-*-arm64 (or a self-hosted/GitHub arm64 runner).
+# It is allow_failure so the amd64 leg still publishes while an arm64 runner is being arranged.
 stages: [build, manifest]
 
 variables:
@@ -19,12 +21,10 @@ variables:
   script:
     # native build for THIS runner's arch (build context = repo root)
     - docker build --platform "linux/$ARCH" -t "$IMAGE:$TAG-$ARCH" .
-    # tests-before-ship: the kernel MUST accept 1+1=2 and REJECT 1+1=3
-    - mkdir -p /tmp/t
-    - 'printf "theorem t : 1 + 1 = 2 := rfl\n" > /tmp/t/Check.lean'
-    - docker run --rm -v /tmp/t:/lab -w /lab "$IMAGE:$TAG-$ARCH" lean Check.lean
-    - 'printf "theorem t : 1 + 1 = 3 := rfl\n" > /tmp/t/Check.lean'
-    - "if docker run --rm -v /tmp/t:/lab -w /lab \"$IMAGE:$TAG-$ARCH\" lean Check.lean 2>/dev/null; then echo 'kernel accepted a FALSE theorem'; exit 1; fi"
+    # tests-before-ship: run the kernel self-test INSIDE the container. (Under dind a `-v` bind
+    # mount points at the dind daemon fs, not the job fs, so we write the file in-container, to /tmp.)
+    - "docker run --rm \"$IMAGE:$TAG-$ARCH\" sh -ec 'echo \"theorem t : 1 + 1 = 2 := rfl\" > /tmp/C.lean; lean /tmp/C.lean'"
+    - "if docker run --rm \"$IMAGE:$TAG-$ARCH\" sh -ec 'echo \"theorem t : 1 + 1 = 3 := rfl\" > /tmp/C.lean; lean /tmp/C.lean' 2>/dev/null; then echo \"kernel accepted a FALSE theorem\"; exit 1; fi"
     - docker push "$IMAGE:$TAG-$ARCH"
 
 build:amd64:
@@ -38,6 +38,7 @@ build:arm64:
   stage: build
   tags: [saas-linux-medium-arm64]
   variables: { ARCH: arm64 }
+  allow_failure: true
 
 manifest:
   stage: manifest
