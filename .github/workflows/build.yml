@@ -6,6 +6,7 @@ name: build-lean-checker
 on:
   push:
     branches: [main]
+    paths: [Dockerfile]   # only the root lean-checker Dockerfile; scadamale-lab/ has its own workflow
   workflow_dispatch: {}
 
 env:
