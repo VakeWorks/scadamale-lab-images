@@ -1,0 +1,60 @@
+# Native multi-arch build of vakeworks/scadamale-lab (Python 3.11 + JRE 17 + PySpark 3.5.4 + numpy)
+# on GitHub-hosted runners (free for public repos, NO qemu): amd64 on ubuntu-24.04, arm64 on
+# ubuntu-24.04-arm. Same pattern as build.yml (lean-checker). Published to OUR Docker Hub
+# (docker.io/vakeworks/scadamale-lab) -- GitHub is ONLY the build compute, as in build.yml.
+# Manual trigger only: Actions -> build-scadamale-lab -> Run workflow.
+name: build-scadamale-lab
+on:
+  workflow_dispatch: {}
+
+env:
+  IMAGE: docker.io/vakeworks/scadamale-lab
+  TAG: "0.1.1"
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+            machine: x86_64
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            machine: aarch64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: docker login (our Docker Hub)
+        run: echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USER }}" --password-stdin docker.io
+      - name: native build (${{ matrix.arch }})
+        run: docker build --platform linux/${{ matrix.arch }} -t "$IMAGE:$TAG-${{ matrix.arch }}" scadamale-lab
+      - name: self-test (native arch; the JVM starts; Spark runs a job; HyperLogLog answers)
+        run: |
+          docker run --rm -i -e HOME=/tmp -e EXPECT=${{ matrix.machine }} "$IMAGE:$TAG-${{ matrix.arch }}" python3 - <<'EOF'
+          import os, platform, numpy
+          from pyspark.sql import SparkSession, functions as F
+          assert platform.machine() == os.environ["EXPECT"], platform.machine()
+          spark = SparkSession.builder.master("local[2]").config("spark.jars.ivy", "/tmp/.ivy2").getOrCreate()
+          df = spark.range(100000)
+          assert df.count() == 100000
+          est = df.agg(F.approx_count_distinct("id", rsd=0.05)).first()[0]
+          assert abs(est - 100000) < 25000, est
+          print("selftest ok", platform.machine(), spark.version, numpy.__version__)
+          spark.stop()
+          EOF
+      - name: push arch tag to Docker Hub
+        run: docker push "$IMAGE:$TAG-${{ matrix.arch }}"
+
+  manifest:
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - name: docker login (our Docker Hub)
+        run: echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USER }}" --password-stdin docker.io
+      - name: combine + push multi-arch manifest
+        run: |
+          docker manifest create "$IMAGE:$TAG" "$IMAGE:$TAG-amd64" "$IMAGE:$TAG-arm64"
+          docker manifest push "$IMAGE:$TAG"
+          docker manifest inspect "$IMAGE:$TAG"
+          echo "published multi-arch $IMAGE:$TAG (amd64+arm64, native, no qemu) to Docker Hub"
