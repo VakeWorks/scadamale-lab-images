@@ -9,7 +9,7 @@ on:
 
 env:
   IMAGE: docker.io/vakeworks/scadamale-lab
-  TAG: "0.1.1"
+  TAG: "0.1.2"
 
 jobs:
   build:
@@ -43,6 +43,11 @@ jobs:
           print("selftest ok", platform.machine(), spark.version, numpy.__version__)
           spark.stop()
           EOF
+      - name: self-test Scala (spark-shell runs a Spark job natively; Labs 3+ use it)
+        run: |
+          printf '%s\n' 'println("SCALA-OK " + spark.range(1000).count())' 'System.exit(0)' > t.scala
+          docker run --rm -e HOME=/tmp -v "$PWD/t.scala:/tmp/t.scala:ro" "$IMAGE:$TAG-${{ matrix.arch }}" spark-shell --master 'local[2]' --conf spark.jars.ivy=/tmp/.ivy2 -i /tmp/t.scala > scala.log 2>&1
+          grep "SCALA-OK 1000" scala.log
       - name: push arch tag to Docker Hub
         run: docker push "$IMAGE:$TAG-${{ matrix.arch }}"
 
