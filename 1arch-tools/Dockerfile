@@ -53,8 +53,16 @@ RUN printf 'deb http://deb.debian.org/debian bullseye main\ndeb http://archive.d
  && apt-get -o Acquire::Check-Valid-Until=false update \
  && apt-get install -y --no-install-recommends git ca-certificates libgmp10 libffi7 libnuma1 zlib1g \
  && rm -rf /var/lib/apt/lists/* \
- && git config --system --add safe.directory '*'
-# safe.directory: the student's repository is mounted from the host and owned by another uid than the container's
+ && git config --system --add safe.directory '*' \
+ && git config --system --add safe.directory /work \
+ && printf '#!/bin/sh\nunset GIT_CONFIG_NOSYSTEM\nexec /usr/bin/git "$@"\n' > /usr/local/bin/git \
+ && chmod 755 /usr/local/bin/git
+# safe.directory: the student's repository is mounted from the host and owned by another uid than the container's (the
+# plain alias on macOS and on Linux without --user: the container runs as root, the files belong to the student).
+# ias-check runs git with GIT_CONFIG_NOSYSTEM=1 and gives safe.directory with -c, and this Debian git (2.30) honours
+# safe.directory only from the system or global config, never from -c: the student walk of 2026-11-10 failed with
+# "detected dubious ownership". So the git that ias-check finds first on PATH is a wrapper that lets the image's own
+# system config (safe.directory, and nothing else) apply; GIT_CONFIG_GLOBAL=/dev/null, ias-check's other isolation, stays.
 COPY --from=build /out/bin/ /usr/local/bin/
 COPY --from=build /out/1arch/ /opt/1arch/
 ENV ONEARCH=/opt/1arch
