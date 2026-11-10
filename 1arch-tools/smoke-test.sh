@@ -46,6 +46,11 @@ if [ "$(id -u)" = 0 ] && command -v setpriv > /dev/null; then
   rc=0; setpriv --reuid=4242 --regid=4242 --clear-groups env HOME=/ "$B/ias-check" run > "$T/page3.txt" 2>&1 || rc=$?
   [ "$rc" = 0 ] || { cat "$T/page3.txt" >&2; fail "NON-ROOT: ias-check run as uid 4242 exited $rc (expected 0)"; }
   [ "$(stat -c %u check-report.json)" = 4242 ] || fail "NON-ROOT: the report is not owned by the uid that ran the check"
+  # S2c the plain alias (macOS, or Linux without --user): root runs the check on a repository another uid owns. The
+  # student walk of 2026-11-10 failed here with git's "detected dubious ownership"; this law keeps it fixed.
+  rm -f check-report.json
+  rc=0; "$B/ias-check" run > "$T/page4.txt" 2>&1 || rc=$?
+  [ "$rc" = 0 ] || { cat "$T/page4.txt" >&2; fail "PLAIN-ALIAS: root on a repository owned by uid 4242 exited $rc (expected 0)"; }
   chown -R 0:0 "$T/repo"
 else
   echo "S2b skipped: not root, so the uid cannot be switched (the image's test stage runs it as root)" >&2
