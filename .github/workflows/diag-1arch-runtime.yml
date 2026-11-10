@@ -23,10 +23,10 @@ jobs:
         run: |
           docker run --rm docker.io/library/debian:bullseye-slim@sha256:e5b6442dd2e9684cf5e87d8338b5968f3b348636fc0be6d7850a381e3731a2bd sh -c '
             echo "SOURCES:"; ls /etc/apt/sources.list.d/ 2>&1; cat /etc/apt/sources.list 2>&1 | head -3
-            printf "deb http://deb.debian.org/debian bullseye main\n" > /etc/apt/sources.list
+            printf "deb http://deb.debian.org/debian bullseye main\ndeb http://archive.debian.org/debian-security bullseye-security main\n" > /etc/apt/sources.list
             rm -f /etc/apt/sources.list.d/*.list
-            apt-get update 2>&1 | tail -6
-            apt-get install -y --no-install-recommends git ca-certificates libgmp10 libffi7 libnuma1 zlib1g 2>&1 | tail -8
-            echo "EXIT $?"' > /tmp/apt.log 2>&1 || true
+            apt-get -o Acquire::Check-Valid-Until=false update 2>&1 | tail -6
+            apt-get install -y --no-install-recommends git ca-certificates libgmp10 libffi7 libnuma1 zlib1g > /tmp/i.log 2>&1; rc=$?
+            tail -8 /tmp/i.log; git --version; echo "EXIT $rc"' > /tmp/apt.log 2>&1 || true
           head -n 9 /tmp/apt.log | sed 's/^/::warning::/'
           tail -n 9 /tmp/apt.log | sed 's/^/::error::/'
