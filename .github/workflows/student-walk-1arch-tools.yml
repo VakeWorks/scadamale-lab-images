@@ -1,0 +1,103 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 VakeWorks AB
+#
+# The student walk of a PUBLISHED 1arch-tools image: the README's own commands, run on the host as a student runs
+# them, against the image as students pull it (not the build's test stage). Each leg is one form of the README's
+# alias: Linux with Docker and --user (amd64 and arm64), the plain alias as macOS has it (run here on Linux), and
+# rootless Podman with --userns=keep-id. Each leg: pull the image, clone 1Arch over https (it is public), make a group
+# repository from the release's template and commit it, run `onearch ias-check run` (exit 0, a check-report.json the
+# student owns where the form promises it), and the canary: an uncommitted edit exits 2.
+#
+# INSTALL (github.com/VakeWorks/scadamale-lab-images): this file as .github/workflows/student-walk-1arch-tools.yml.
+# RUN: Actions > student-walk-1arch-tools > Run workflow, with the image tag. No secrets: everything it reads is public.
+name: student-walk-1arch-tools
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "the published image tag (the 1Arch release commit's first 8 characters)"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  walk:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - leg: linux-docker-amd64
+            runner: ubuntu-24.04
+            form: linux-user
+          - leg: linux-docker-arm64
+            runner: ubuntu-24.04-arm
+            form: linux-user
+          - leg: plain-alias-amd64
+            runner: ubuntu-24.04
+            form: plain
+          - leg: rootless-podman-amd64
+            runner: ubuntu-24.04
+            form: podman
+    runs-on: ${{ matrix.runner }}
+    name: ${{ matrix.leg }}
+    steps:
+      - name: the README's walk
+        shell: bash
+        env:
+          TAG: ${{ inputs.tag }}
+          FORM: ${{ matrix.form }}
+        run: |
+          set -euo pipefail
+          shopt -s expand_aliases
+          [[ "$TAG" =~ ^[0-9a-f]{8}$ ]] || { echo "tag must be 8 hex characters"; exit 1; }
+          IMG="docker.io/vakeworks/1arch-tools:$TAG"
+          case "$FORM" in
+            linux-user) alias onearch='docker run --rm --user "$(id -u):$(id -g)" -v "$PWD":/work -w /work "$IMG"'; ENGINE=docker ;;
+            plain)      alias onearch='docker run --rm -v "$PWD":/work -w /work "$IMG"'; ENGINE=docker ;;
+            podman)     alias onearch='podman run --rm --userns=keep-id -v "$PWD":/work -w /work "$IMG"'; ENGINE=podman ;;
+            *) echo "unknown form $FORM"; exit 1 ;;
+          esac
+          echo "== leg: $FORM on $(uname -m), $($ENGINE --version)"
+
+          echo "== 1. pull the published image"
+          $ENGINE pull "$IMG"
+          $ENGINE image inspect "$IMG" --format '{{.Architecture}} {{index .Config.Labels "org.opencontainers.image.revision"}}' || true
+
+          echo "== 2. clone 1Arch over https, as the README says (public)"
+          mkdir -p "$HOME/walk"
+          cd "$HOME/walk"
+          git clone -q https://git.vake.works/ias/1archcodemathsprovedog.git
+          git -C 1archcodemathsprovedog log -1 --format='1Arch main: %H %s'
+
+          echo "== 3. the image is the tested release"
+          onearch cat /usr/local/share/1arch-tools/smoke-ok
+
+          echo "== 4. a group repository from the release's template, committed"
+          mkdir group
+          cd group
+          onearch ias-template keys /opt/1arch/templates/group-project > keys.json
+          onearch ias-template render /opt/1arch/templates/group-project keys.json > seed.tar
+          tar -xf seed.tar
+          rm seed.tar keys.json
+          git init -q -b main
+          git add -A
+          git -c user.name=walk -c user.email=walk@example.invalid commit -q -m seed
+          echo "files: $(git ls-files | wc -l)"
+
+          echo "== 5. onearch ias-check run (expect exit 0)"
+          rc=0; onearch ias-check run || rc=$?
+          [ "$rc" = 0 ] || { echo "WALK FAIL: ias-check run exited $rc (expected 0)"; exit 1; }
+          [ -s check-report.json ] || { echo "WALK FAIL: no check-report.json"; exit 1; }
+          owner="$(stat -c %u check-report.json)"
+          echo "check-report.json is owned by uid $owner (this user: $(id -u))"
+          if [ "$FORM" != plain ] && [ "$owner" != "$(id -u)" ]; then
+            echo "WALK FAIL: the $FORM form should leave the report owned by the student"; exit 1
+          fi
+
+          echo "== 6. canary: an uncommitted edit (expect exit 2)"
+          echo "% an uncommitted edit" >> paper/main.tex
+          rc=0; onearch ias-check run > /dev/null 2>&1 || rc=$?
+          [ "$rc" = 2 ] || { echo "WALK FAIL: a dirty tree exited $rc (expected 2)"; exit 1; }
+          echo "WALK OK: $FORM on $(uname -m)"
