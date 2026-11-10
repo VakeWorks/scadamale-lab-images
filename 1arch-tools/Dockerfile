@@ -22,11 +22,13 @@ FROM docker.io/library/haskell:9.6.6-bullseye@sha256:33e280e96a347f31cb9eb595c9e
 ARG ONEARCH_REPO=https://git.vake.works/ias/1archcodemathsprovedog.git
 ARG ONEARCH_REF
 RUN test -n "$ONEARCH_REF" || { echo "ONEARCH_REF (the full 1Arch commit) is required" >&2; exit 1; }
-# haskell:9.6.6 (GHC 9.6.6 + stack, for lts-22.43) is Debian bullseye, whose security archive no longer serves the
-# packages its index names: install from bullseye main only
-RUN printf 'deb http://deb.debian.org/debian bullseye main\n' > /etc/apt/sources.list \
+# haskell:9.6.6 (GHC 9.6.6 + stack, for lts-22.43) is Debian bullseye. security.debian.org still lists bullseye's
+# security packages but no longer serves them (404); archive.debian.org does. The base images already carry those
+# security versions (perl-base 5.32.1-4+deb11u5), so main alone cannot satisfy git's perl: take bullseye main from
+# deb.debian.org and bullseye-security from archive.debian.org (an archived index: no Valid-Until check).
+RUN printf 'deb http://deb.debian.org/debian bullseye main\ndeb http://archive.debian.org/debian-security bullseye-security main\n' > /etc/apt/sources.list \
  && rm -f /etc/apt/sources.list.d/*.list \
- && apt-get update \
+ && apt-get -o Acquire::Check-Valid-Until=false update \
  && apt-get install -y --no-install-recommends git ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 RUN git clone "$ONEARCH_REPO" /src/1arch \
@@ -45,9 +47,10 @@ RUN mkdir -p /out/1arch \
 
 # ---- 2. runtime: the same Debian as the build (one glibc), the engines, git ----
 FROM docker.io/library/debian:bullseye-slim@sha256:e5b6442dd2e9684cf5e87d8338b5968f3b348636fc0be6d7850a381e3731a2bd AS runtime
-RUN printf 'deb http://deb.debian.org/debian bullseye main\n' > /etc/apt/sources.list \
+# the same two sources as the build stage (see there)
+RUN printf 'deb http://deb.debian.org/debian bullseye main\ndeb http://archive.debian.org/debian-security bullseye-security main\n' > /etc/apt/sources.list \
  && rm -f /etc/apt/sources.list.d/*.list \
- && apt-get update \
+ && apt-get -o Acquire::Check-Valid-Until=false update \
  && apt-get install -y --no-install-recommends git ca-certificates libgmp10 libffi7 libnuma1 zlib1g \
  && rm -rf /var/lib/apt/lists/* \
  && git config --system --add safe.directory '*'
