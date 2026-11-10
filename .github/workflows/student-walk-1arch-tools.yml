@@ -18,6 +18,10 @@ on:
       tag:
         description: "the published image tag (the 1Arch release commit's first 8 characters)"
         required: true
+      build_ref:
+        description: "optional: build the image on each runner from this repository's 1arch-tools/ at this full 1Arch commit, and walk with it instead of the published one (the walk of a fix before it is published)"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -43,16 +47,26 @@ jobs:
     runs-on: ${{ matrix.runner }}
     name: ${{ matrix.leg }}
     steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        if: ${{ inputs.build_ref != '' }}
       - name: the README's walk
         shell: bash
         env:
           TAG: ${{ inputs.tag }}
+          BUILD_REF: ${{ inputs.build_ref }}
           FORM: ${{ matrix.form }}
         run: |
           set -euo pipefail
           shopt -s expand_aliases
           [[ "$TAG" =~ ^[0-9a-f]{8}$ ]] || { echo "tag must be 8 hex characters"; exit 1; }
           IMG="docker.io/vakeworks/1arch-tools:$TAG"
+          if [ -n "$BUILD_REF" ]; then
+            [[ "$BUILD_REF" =~ ^[0-9a-f]{40}$ ]] || { echo "build_ref must be a full commit"; exit 1; }
+            IMG="localhost/1arch-tools-walk:$TAG"
+            echo "== 0. build the image here from 1arch-tools/ at $BUILD_REF (not published)"
+            docker build -q --build-arg ONEARCH_REF="$BUILD_REF" -t "$IMG" "$GITHUB_WORKSPACE/1arch-tools"
+            if [ "$FORM" = podman ]; then docker save "$IMG" | podman load; fi
+          fi
           case "$FORM" in
             linux-user) alias onearch='docker run --rm --user "$(id -u):$(id -g)" -v "$PWD":/work -w /work "$IMG"'; ENGINE=docker ;;
             plain)      alias onearch='docker run --rm -v "$PWD":/work -w /work "$IMG"'; ENGINE=docker ;;
@@ -62,7 +76,7 @@ jobs:
           echo "== leg: $FORM on $(uname -m), $($ENGINE --version)"
 
           echo "== 1. pull the published image"
-          $ENGINE pull "$IMG"
+          [ -n "$BUILD_REF" ] || $ENGINE pull "$IMG"
           $ENGINE image inspect "$IMG" --format '{{.Architecture}} {{index .Config.Labels "org.opencontainers.image.revision"}}' || true
 
           echo "== 2. clone 1Arch over https, as the README says (public)"
