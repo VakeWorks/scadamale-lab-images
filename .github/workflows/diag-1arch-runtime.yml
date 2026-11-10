@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 VakeWorks AB
+#
+# A diagnostic for build-1arch-tools: it reproduces the runtime stage's package step on each architecture and reports
+# its last lines as annotations, readable through the API. Removed once the build is green.
+name: diag-1arch-runtime
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  apt:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: the runtime stage's package step, in the pinned base
+        run: |
+          docker run --rm docker.io/library/debian:bullseye-slim@sha256:e5b6442dd2e9684cf5e87d8338b5968f3b348636fc0be6d7850a381e3731a2bd sh -c '
+            echo "SOURCES:"; ls /etc/apt/sources.list.d/ 2>&1; cat /etc/apt/sources.list 2>&1 | head -3
+            printf "deb http://deb.debian.org/debian bullseye main\n" > /etc/apt/sources.list
+            rm -f /etc/apt/sources.list.d/*.list
+            apt-get update 2>&1 | tail -6
+            apt-get install -y --no-install-recommends git ca-certificates libgmp10 libffi7 libnuma1 zlib1g 2>&1 | tail -8
+            echo "EXIT $?"' > /tmp/apt.log 2>&1 || true
+          head -n 9 /tmp/apt.log | sed 's/^/::warning::/'
+          tail -n 9 /tmp/apt.log | sed 's/^/::error::/'
