@@ -1,0 +1,135 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 VakeWorks AB
+#
+# The 1arch-tools image for amd64 and arm64, each built on its own native runner (no qemu), as Docker's
+# "Distribute build across multiple runners" describes: each platform is pushed by digest, then one job joins the two
+# digests into a manifest list per registry: git.vake.works (our own) and Docker Hub (for reach).
+#
+# INSTALL (once, in github.com/VakeWorks/scadamale-lab-images): this file as .github/workflows/build-1arch-tools.yml,
+# and labs-images/1arch-tools/{Dockerfile,smoke-test.sh} as 1arch-tools/. Secrets: DOCKERHUB_USER, DOCKERHUB_TOKEN
+# (exist); only with the input gitvw: GITVW_REGISTRY_USER, GITVW_REGISTRY_TOKEN (a git.vake.works account in the ias
+# org, token scope write:package). RUN: Actions > build-1arch-tools > Run workflow, with the 1Arch release commit and
+# its tag (the commit's first 8 characters), as the image's recipe gives them. Without gitvw the image goes to Docker
+# Hub only.
+name: build-1arch-tools
+
+on:
+  workflow_dispatch:
+    inputs:
+      onearch_ref:
+        description: "the full 40-character 1ArchCodeMathsProveDog commit (the recipe's ONEARCH_REF)"
+        required: true
+      tag:
+        description: "the image tag: the commit's first 8 characters"
+        required: true
+      overwrite:
+        description: "replace a tag that already exists (a tag is never moved otherwise)"
+        type: boolean
+        default: false
+      gitvw:
+        description: "also publish to git.vake.works/ias/1arch-tools (needs the GITVW_REGISTRY_USER/TOKEN secrets)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+env:
+  GITVW_IMAGE: git.vake.works/ias/1arch-tools
+  HUB_IMAGE: docker.io/vakeworks/1arch-tools
+
+jobs:
+  inputs:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: the commit is 40 hex characters and the tag is its first 8
+        env:
+          REF: ${{ inputs.onearch_ref }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          [[ "$REF" =~ ^[0-9a-f]{40}$ ]] || { echo "onearch_ref is not a full commit id"; exit 1; }
+          [ "$TAG" = "${REF:0:8}" ] || { echo "tag must be the commit's first 8 characters"; exit 1; }
+
+  build:
+    needs: inputs
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-24.04
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        if: ${{ inputs.gitvw }}
+        with:
+          registry: git.vake.works
+          username: ${{ secrets.GITVW_REGISTRY_USER }}
+          password: ${{ secrets.GITVW_REGISTRY_TOKEN }}
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USER }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: build natively (the Dockerfile's test stage runs on this arch) and push by digest
+        id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: 1arch-tools
+          platforms: ${{ matrix.platform }}
+          build-args: ONEARCH_REF=${{ inputs.onearch_ref }}
+          outputs: type=image,"name=${{ inputs.gitvw && format('{0},{1}', env.GITVW_IMAGE, env.HUB_IMAGE) || env.HUB_IMAGE }}",push-by-digest=true,name-canonical=true,push=true
+      - name: keep the digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          mkdir -p /tmp/digests
+          touch "/tmp/digests/${DIGEST#sha256:}"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: digest-${{ matrix.runner }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          path: /tmp/digests
+          pattern: digest-*
+          merge-multiple: true
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        if: ${{ inputs.gitvw }}
+        with:
+          registry: git.vake.works
+          username: ${{ secrets.GITVW_REGISTRY_USER }}
+          password: ${{ secrets.GITVW_REGISTRY_TOKEN }}
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USER }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: one manifest list (amd64 + arm64) per registry
+        working-directory: /tmp/digests
+        env:
+          TAG: ${{ inputs.tag }}
+          OVERWRITE: ${{ inputs.overwrite }}
+          IMAGES: ${{ inputs.gitvw && format('{0} {1}', env.GITVW_IMAGE, env.HUB_IMAGE) || env.HUB_IMAGE }}
+        run: |
+          [ "$(ls | wc -l)" = 2 ] || { echo "expected 2 digests (amd64, arm64), got $(ls | wc -l)"; exit 1; }
+          # a tag is one release, never moved: refuse one that exists unless overwrite was asked for
+          for img in $IMAGES; do
+            if docker buildx imagetools inspect "$img:$TAG" > /dev/null 2>&1 && [ "$OVERWRITE" != true ]; then
+              echo "$img:$TAG already exists: nothing published (re-run with overwrite to replace it)"; exit 1
+            fi
+          done
+          for img in $IMAGES; do
+            docker buildx imagetools create -t "$img:$TAG" $(printf "$img@sha256:%s " *)
+            docker buildx imagetools inspect "$img:$TAG"
+          done
