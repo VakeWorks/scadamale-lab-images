@@ -1,0 +1,45 @@
+1arch-tools:<release>-build -- NOTICE
+
+This image carries software under several licences. Its SPDX expression is
+"Apache-2.0 AND LicenseRef-1arch-tools-build-NOTICE": VakeWorks' own parts are
+Apache-2.0, and every other part keeps its own licence, listed here.
+
+1. VakeWorks AB (Apache-2.0, Copyright (c) 2026 VakeWorks AB)
+   - the 1ArchCodeMathsProveDog commands (ias-check, ias-template and the engines they run) and files
+     (/opt/1arch), from the 1arch-tools image of the same release;
+     source: https://git.vake.works/ias/1archcodemathsprovedog
+   - this image's own files: /usr/local/bin/1arch-entrypoint, /usr/local/bin/1arch-figure,
+     the two tests under /usr/local/share/1arch-tools-build/, and this NOTICE.
+
+2. Lean 4, version 4.32.0 (/opt/elan/toolchains/leanprover--lean4---v4.32.0)
+   Apache-2.0. Source: https://github.com/leanprover/lean4 (tag v4.32.0).
+
+3. elan, version 4.4.0 (/opt/elan/bin)
+   Apache-2.0. Source: https://github.com/leanprover/elan (tag v4.4.0).
+
+4. TeX Live 2023 (/opt/texlive), installed from the frozen 2023 archive
+   (scheme-basic and the packages the course template needs). Each package
+   keeps its own licence (most are LPPL 1.3c; others are GPL, LGPL, public
+   domain or font licences). This command lists every installed package with
+   its licence:
+     docker run --rm --entrypoint tlmgr <this image> info --only-installed --data name,cat-license
+   Sources of TeX Live 2023:
+     https://ftp.math.utah.edu/pub/tex/historic/systems/texlive/2023/
+
+5. Debian 11 (bullseye) packages of the base image (git, perl, ca-certificates,
+   poppler-utils, and their dependencies): each under its own licence, stated in
+   /usr/share/doc/<package>/copyright. Sources: https://sources.debian.org/
+
+6. Node.js, version 22.23.2 (/opt/node)
+   MIT. Node.js bundles other software (npm among it), each part under its own
+   licence; /opt/node/LICENSE lists them all.
+   Source: https://github.com/nodejs/node (tag v22.23.2).
+
+7. Marp CLI, version 4.5.0, and the npm packages it needs (/opt/1arch-slides)
+   Marp CLI is MIT. Its 156 packages are pinned by the lockfile
+   /opt/1arch-slides/package-lock.json and keep their own licences: MIT, ISC,
+   Apache-2.0, BSD-2-Clause, BSD-3-Clause, MIT-0, 0BSD, Python-2.0 and PSF-2.0.
+   Each package's licence file is in /opt/1arch-slides/node_modules/<package>/.
+   Source: https://github.com/marp-team/marp-cli (tag v4.5.0).
+
+The image carries no web browser.
