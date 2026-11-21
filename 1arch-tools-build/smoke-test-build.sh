@@ -224,12 +224,22 @@ tlmgr info --only-installed --data name,cat-license > "$T/licences.txt" 2>&1 \
   || { tail -n 20 "$T/licences.txt" >&2; fail "B11: tlmgr cannot list the installed packages' licences"; }
 grep -q '^luaotfload,' "$T/licences.txt" || fail "B11: the licence listing does not name luaotfload"
 
-# B8 ELAN-RO and THE WARM CACHE: after every uid-4242 build above, nothing under /opt/elan or /opt/texlive
-#    changed, and no luaotfload names database was written into the uid's TEXMFVAR (the image's own was found)
+# B8 ELAN-RO and THE CACHE RULE: after every uid-4242 build above, nothing under /opt/elan or /opt/texlive changed.
+#    luaotfload reads and writes its names database ONLY at the first WRITABLE TEXMFCACHE path (the Dockerfile's tex
+#    stage names the source lines and the version it was read at): the image's database, built as root, is in
+#    TEXMFSYSVAR and serves root's runs; a non-root uid's first writable path is TEXMFVAR=/tmp/texmf-var, where its
+#    first lualatex run builds its own. So (a) the image's database exists, (b) the uid's database exists under its
+#    TEXMFVAR (the runs above reached luaotfload), and (c) no luaotfload cache was written under the test's folders
 ch="$(find /opt/elan /opt/texlive -newer "$T/stamp" | head -n 5)"
 [ -z "$ch" ] || fail "B8 ELAN-RO: the toolchains changed during the student's runs: $ch"
-nm="$(find /tmp/texmf-var -name 'luaotfload-names*' 2> /dev/null | head -n 1)"
-[ -z "$nm" ] || fail "B8 WARM: luaotfload rebuilt its names database at run time ($nm): the image's cache is cold"
+as_student luaotfload-tool --version 2>&1 | sed 's/^/B8: /'
+sv="$(kpsewhich -var-value TEXMFSYSVAR)"
+[ -n "$(find "$sv/luatex-cache/generic/names" -name 'luaotfload-names*' 2> /dev/null | head -n 1)" ] \
+  || fail "B8 IMAGE-DB: no luaotfload names database under $sv/luatex-cache/generic/names (the tex stage's luaotfload-tool --update)"
+[ -n "$(find /tmp/texmf-var/luatex-cache/generic/names -name 'luaotfload-names*' 2> /dev/null | head -n 1)" ] \
+  || fail "B8 UID-DB: no luaotfload names database under /tmp/texmf-var: the uid-$U runs never reached luaotfload, or it wrote elsewhere"
+lc="$(find "$T" -path '*luatex-cache*' | head -n 5)"
+[ -z "$lc" ] || fail "B8 NO-LEAK: a luaotfload cache was written under the test's folders: $lc"
 
 # B9 ROOT (the cost of staying root, pinned): root sees the toolchain writable (access(2)), so --build alone exits 0 with
 #    toolchain_writable true and the note, and --require-complete makes it a lean defect, exit 1
