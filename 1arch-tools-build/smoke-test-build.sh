@@ -39,7 +39,13 @@ touch "$T/stamp"
 check_run() {
   lbl="$1"; want="$2"; shift 2
   rc=0; as_student ias-check run "$@" > "$T/page.txt" 2>&1 || rc=$?
-  [ "$rc" = "$want" ] || { cat "$T/page.txt" >&2; fail "$lbl: ias-check run $* exited $rc (expected $want)"; }
+  [ "$rc" = "$want" ] || {
+    cat "$T/page.txt" >&2
+    # the join's defects name a failed checker and why (the page shows only "join defects")
+    if [ -f check-report.json ]; then
+      jq -c '[.steps[] | select(.step=="join")][0].detail.defects' check-report.json >&2 || true
+    fi
+    fail "$lbl: ias-check run $* exited $rc (expected $want)"; }
 }
 # jcheck LABEL EXPR: the jq expression EXPR is true on check-report.json
 jcheck() {
@@ -56,6 +62,9 @@ SMOKE_MARK_DIR="$T/tools-mark" sh /usr/local/share/1arch-tools/smoke-test.sh > "
 # B1 THE TOOLCHAIN: Lean 4.32.0 through elan's default, for uid 4242 with HOME=/tmp; nothing under /opt/elan or
 #    /opt/texlive is world-writable; uid 4242 cannot write what ias-check's probe looks at (the prefix, bin/lean,
 #    lib/lean)
+# the engines read text in the locale's encoding and ias-check passes them LANG: the image's LANG must be UTF-8, or
+# ias-cert-edges cannot read a Lean file with a non-ASCII character (the template's alpha), run 44844658352
+[ "${LANG:-}" = C.UTF-8 ] || fail "B1: LANG is '${LANG:-}' (expected C.UTF-8: the engines decode text by the locale)"
 v="$(cd / && as_student lean --version 2>&1)" || fail "B1: lean --version fails for uid $U: $v"
 case "$v" in *"version 4.32.0"*) ;; *) fail "B1: lean --version says '$v' (expected version 4.32.0)" ;; esac
 ww="$(find /opt/elan /opt/texlive ! -type l -perm -0002 | head -n 5)"
