@@ -1,0 +1,52 @@
+\input{preamble}
+
+% ---- GROUP MACROS (begin): your own \newcommand lines go here, and only here ----
+\newcommand{\Mean}{\bar{x}}
+% ---- GROUP MACROS (end) ----
+
+\title{A sample mean in one pass}
+\author{First Member \and Second Member}
+\date{ScaDaMaLe, WASP 2026 \quad (an own-paper fixture)}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+A running mean that keeps one number of state, and the proof that it ends at the sample mean.
+\end{abstract}
+
+\section{Setting}\label{sec-setting}
+
+\begin{definition}\label{Dfn-SampleMean}
+For $x_1,\dots,x_n \in \mathbb{R}$ with $n \ge 1$, the \emph{sample mean} is
+$\Mean = \frac{1}{n} \sum_{i=1}^{n} x_i$.
+\end{definition}
+
+\begin{lemma}\label{Lem-OnePass}
+Let $m_0 = 0$ and $m_k = m_{k-1} + (x_k - m_{k-1})/k$ for $k = 1,\dots,n$. Then $m_n = \Mean$.
+\end{lemma}
+
+\begin{proof}
+By induction on $k$, $m_k = \frac{1}{k} \sum_{i=1}^{k} x_i$: it holds for $k = 1$, since $m_1 = x_1$, and if it holds
+for $k - 1$, then $m_k = \bigl((k-1)\, m_{k-1} + x_k\bigr)/k = \frac{1}{k} \sum_{i=1}^{k} x_i$. Take $k = n$.
+\end{proof}
+
+\section{Discussion}\label{sec-discussion}
+
+\Cref{Lem-OnePass} computes the mean of \cref{Dfn-SampleMean} in one pass over the data, with no running sum that
+can grow without bound (\cref{Dfn-SampleMean,Lem-OnePass}). In an exponential family the mean parameter is the
+gradient of the log-partition function~\cite[Prop.~3.1]{wainwright2008graphical}, so this pass is also the moment
+step of a maximum-likelihood fit (\cref{sec-setting}).
+
+\section*{Authors' Contributions}
+
+Each member writes their own line.
+
+\section*{Use of AI tools}
+
+None.
+
+\bibliographystyle{alpha}
+\bibliography{refs}
+
+\end{document}
