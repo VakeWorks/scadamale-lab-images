@@ -184,9 +184,15 @@ COPY --chmod=0755 entrypoint.sh /usr/local/bin/1arch-entrypoint
 COPY --chmod=0755 1arch-figure.sh /usr/local/bin/1arch-figure
 # ELAN_HOME in THIS stage: a uid with HOME=/tmp would otherwise look in $HOME/.elan, find no toolchain and try to
 # download one. TEXMFVAR: a uid's own luaotfload caches go to /tmp, never into the repository.
+# LANG=C.UTF-8 (glibc's built-in UTF-8 locale; no locales package): the engines read text in the locale's encoding,
+# and ias-check gives each engine only PATH, HOME and LANG. With no LANG (neither base image sets one), ias-cert-edges
+# stopped on the template's lean/Paper/Example.lean ("cannot decode byte sequence starting from 206", the first byte
+# of its alpha), the join recorded the lean checker as failed, and E2E-BUILD-ACTIVE exited 1 (run 44844658352, job
+# 136661339128, 2026-11-21).
 ENV ELAN_HOME=/opt/elan \
     PATH=/opt/elan/bin:/opt/texlive/bin:/opt/1arch-slides/node_modules/.bin:/opt/node/bin:$PATH \
-    TEXMFVAR=/tmp/texmf-var
+    TEXMFVAR=/tmp/texmf-var \
+    LANG=C.UTF-8
 
 # ---- 5. test: ias-check run --build end to end, its canaries, T1 and the entrypoint, on this architecture, offline ----
 FROM runtime AS test
