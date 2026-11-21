@@ -1,0 +1,8 @@
+{
+  "name": "1arch-slides",
+  "private": true,
+  "license": "Apache-2.0",
+  "dependencies": {
+    "@marp-team/marp-cli": "4.5.0"
+  }
+}
