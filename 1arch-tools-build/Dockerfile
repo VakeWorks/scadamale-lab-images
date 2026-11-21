@@ -128,8 +128,14 @@ RUN set -eu; \
     chmod -R go-w /opt/texlive
 # luaotfload-tool is '#!/usr/bin/env texlua', so it runs with /opt/texlive/bin on PATH (without it the op's second
 # local build, 2026-11-20 22:01, stopped at "/usr/bin/env: 'texlua': No such file or directory").
-# luaotfload-tool runs BARE (no '|| true'), as root, so its names database lands in TEXMFSYSVAR, read-only at run
-# time; the test shows a student's run finds it warm.
+# luaotfload-tool runs BARE (no '|| true'), as root, so its names database lands in TEXMFSYSVAR, root's first writable
+# TEXMFCACHE path: it is warm for root's runs only. luaotfload reads and writes its names database ONLY at the first
+# WRITABLE TEXMFCACHE path, never at a read-only one (read at luaotfload 3.26, TeX Live 2023:
+# luaotfload-configuration.lua l.375-396 build_cache_paths, fontloader-basics-gen.lua l.231-246, luaotfload-database.lua
+# l.563-617 load_names). A non-root uid's first writable path is TEXMFVAR=/tmp/texmf-var, so its first lualatex run in
+# a container builds its own database there, in under a second (lm and a few fonts), never in the repository. The test's
+# B8 checks this rule; run 44848336135 (job 136673499253, 2026-11-21) failed the earlier premise that a student's run
+# finds the image's database warm.
 
 # ---- 3. node: Node.js 22 LTS and the slides' npm closure (Marp) ----
 # The tarball for each architecture is pinned by the sha256 that nodejs.org's SHASUMS256.txt for v22.23.2 publishes
