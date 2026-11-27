@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright (c) 2026 VakeWorks AB
 #
-# 1arch-tools:<release>-build -- the 1arch-tools image of ONE release, plus core Lean 4.32.0 (elan), TeX Live 2023
+# 1arch-tools:<release>-build -- the 1arch-tools image of ONE release, plus core Lean 4.36.0 and 4.32.0 (elan), TeX Live 2023
 # (lualatex, latexmk, BibTeX) and the course's slide machinery without a browser (Node 22, Marp, 1arch-figure), so
 # `ias-check run --build` runs in one container and a group's talk and its TikZ figures build the way the course's
 # lecture slides do. The same image name the groups already use, a sibling tag: <release> stays the phase-A image as
@@ -52,34 +52,43 @@ RUN printf 'deb http://deb.debian.org/debian bullseye main\ndeb http://archive.d
  && apt-get -o Acquire::Check-Valid-Until=false update \
  && apt-get install -y --no-install-recommends ca-certificates curl zstd \
  && rm -rf /var/lib/apt/lists/*
-# elan v4.4.0 and Lean v4.32.0: each release asset pinned by the sha256 GitHub publishes for it (read 2026-11-20).
-# elan installs the toolchain itself (explicitly: elan 4.4.0's elan-init --default-toolchain only SETS the default and
-# installs nothing, so the first local build met "No such file or directory" at the diff; 2026-11-20); the pinned Lean
-# asset is then unpacked beside it and must be byte-equal (diff -r),
-# so the toolchain is the pinned bytes. Installed under EXACTLY the seed's lean-toolchain string (Ias.Check leanPin) and
-# made elan's default. Root-owned, no group or world write: ias-check's probe (lean --print-prefix, its
-# bin/lean and lib/lean) must find it read-only for a non-root uid.
+# elan v4.4.0 and the course's TWO Leans, v4.36.0 (the template's pin, elan's default) and v4.32.0 (groups seeded on
+# it may keep it until they move; ias-check accepts both, Ias.Check leanPins): each release asset pinned by the sha256
+# GitHub publishes for it (v4.32.0 read 2026-11-20; v4.36.0 read 2026-11-26 from the release record archived in
+# onesecdecom-plans .ias/research-archive/lean4-v4.36.0-seal/). The image runs offline, so a group's lean-toolchain must
+# name a toolchain installed here: both are. elan installs each toolchain itself (explicitly: elan 4.4.0's elan-init
+# --default-toolchain only SETS the default and installs nothing, so the first local build met "No such file or
+# directory" at the diff; 2026-11-20); each pinned Lean asset is then unpacked beside it and must be byte-equal
+# (diff -r), so every toolchain is the pinned bytes. Installed under EXACTLY the lean-toolchain strings of leanPins.
+# Root-owned, no group or world write: ias-check's probe (lean --print-prefix, its bin/lean and lib/lean) must find
+# it read-only for a non-root uid.
 ENV ELAN_HOME=/opt/elan
 RUN set -eu; \
     case "$TARGETARCH" in \
       amd64) ea=x86_64;  es=0e8250aa2be86c7af929ade68db617af9edc8b9ccf6eaf5ece228250d0d032e2; \
-             la=lean-4.32.0-linux;         ls=fca846f3588724a38ad19ee40292c67cb7438d7555903372e3308eef795ba516 ;; \
+             l32=lean-4.32.0-linux;         s32=fca846f3588724a38ad19ee40292c67cb7438d7555903372e3308eef795ba516; \
+             l36=lean-4.36.0-linux;         s36=2b7ab1ed8b92d2e6abfaf41344823b510064dbc9c0260cac73eb496ab2dea6eb ;; \
       arm64) ea=aarch64; es=45cde3006f82f98804c94cf2ca4949d117060a5f3cc8afa62f523759947ee21f; \
-             la=lean-4.32.0-linux_aarch64; ls=e5eb67e5f30c14d57e70bf7ca2ad880b09a52d75da1cf5e2deabb2418a84c8d1 ;; \
+             l32=lean-4.32.0-linux_aarch64; s32=e5eb67e5f30c14d57e70bf7ca2ad880b09a52d75da1cf5e2deabb2418a84c8d1; \
+             l36=lean-4.36.0-linux_aarch64; s36=35471998152191ef809418ce5bf61f8fc5f209e5e3be05b48bdc4949fdb3e726 ;; \
       *) echo "no pins for TARGETARCH=$TARGETARCH" >&2; exit 1 ;; \
     esac; \
     curl -sSL -o /tmp/elan.tar.gz "https://github.com/leanprover/elan/releases/download/v4.4.0/elan-$ea-unknown-linux-gnu.tar.gz"; \
     echo "$es  /tmp/elan.tar.gz" | sha256sum -c -; \
     tar -xzf /tmp/elan.tar.gz -C /tmp; \
-    /tmp/elan-init -y --no-modify-path --default-toolchain leanprover/lean4:v4.32.0; \
-    /opt/elan/bin/elan toolchain install leanprover/lean4:v4.32.0; \
+    /tmp/elan-init -y --no-modify-path --default-toolchain leanprover/lean4:v4.36.0; \
+    for p in "4.32.0 $l32 $s32" "4.36.0 $l36 $s36"; do \
+      set -- $p; \
+      /opt/elan/bin/elan toolchain install "leanprover/lean4:v$1"; \
+      curl -sSL -o /tmp/lean.tar.zst "https://github.com/leanprover/lean4/releases/download/v$1/$2.tar.zst"; \
+      echo "$3  /tmp/lean.tar.zst" | sha256sum -c -; \
+      mkdir /tmp/lean; \
+      tar --zstd -xf /tmp/lean.tar.zst -C /tmp/lean --strip-components=1; \
+      diff -r /tmp/lean "/opt/elan/toolchains/leanprover--lean4---v$1"; \
+      rm -rf /tmp/lean /tmp/lean.tar.zst; \
+    done; \
     ls /opt/elan/toolchains; \
-    curl -sSL -o /tmp/lean.tar.zst "https://github.com/leanprover/lean4/releases/download/v4.32.0/$la.tar.zst"; \
-    echo "$ls  /tmp/lean.tar.zst" | sha256sum -c -; \
-    mkdir /tmp/lean; \
-    tar --zstd -xf /tmp/lean.tar.zst -C /tmp/lean --strip-components=1; \
-    diff -r /tmp/lean /opt/elan/toolchains/leanprover--lean4---v4.32.0; \
-    rm -rf /tmp/elan-init /tmp/elan.tar.gz /tmp/lean /tmp/lean.tar.zst; \
+    rm -rf /tmp/elan-init /tmp/elan.tar.gz; \
     chown -R root:root /opt/elan; \
     chmod -R go-w /opt/elan
 
@@ -227,7 +236,7 @@ COPY --from=slides-test /usr/local/share/1arch-tools-build/slides-test-passed /u
 COPY smoke-test-build.sh smoke-test-slides.sh /usr/local/share/1arch-tools-build/
 COPY NOTICE /usr/share/doc/1arch-tools-build/NOTICE
 LABEL org.opencontainers.image.title="1arch-tools (-build)" \
-      org.opencontainers.image.description="1arch-tools of one release + core Lean 4.32.0 + TeX Live 2023 + the course's slide machinery, no browser (Node 22, Marp, 1arch-figure): ias-check run --build and a group's talk in one container" \
+      org.opencontainers.image.description="1arch-tools of one release + core Lean 4.36.0 and 4.32.0 + TeX Live 2023 + the course's slide machinery, no browser (Node 22, Marp, 1arch-figure): ias-check run --build and a group's talk in one container" \
       org.opencontainers.image.source="https://git.vake.works/ias/1archcodemathsprovedog" \
       org.opencontainers.image.revision="${ONEARCH_REF}" \
       org.opencontainers.image.base.name="${TOOLS_IMAGE}" \
