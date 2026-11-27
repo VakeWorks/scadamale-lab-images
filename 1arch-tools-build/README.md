@@ -1,6 +1,6 @@
 # 1arch-tools:&lt;release&gt;-build
 
-The 1ArchCodeMathsProveDog commands of one release (the `1arch-tools:<release>` image), plus core Lean 4.32.0,
+The 1ArchCodeMathsProveDog commands of one release (the `1arch-tools:<release>` image), plus core Lean 4.36.0 (and 4.32.0, for projects started on it),
 TeX Live 2023 (LuaLaTeX, latexmk, BibTeX) and the course's slide tools (Marp with Node.js, and `1arch-figure` for
 TikZ figures). With it, `ias-check run --build` runs in one container: it builds your paper's PDF, and builds your
 Lean project and seals its theorems. Your talk (as a web page) and its figures build in the same container, the way
