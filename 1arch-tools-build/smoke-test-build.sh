@@ -134,6 +134,20 @@ jcheck E2E-BUILD-ACTIVE "$LEAN | .status == \"clean\" and .detail.toolchain_writ
 jcheck E2E-BUILD-ACTIVE "$(ROW Paper.Example) == \"sealed\""
 jcheck E2E-BUILD-ACTIVE '[.statements[] | select(.stmt | endswith(":Lem-Example"))][0] | .verdicts.lean == "covered" and .full == true'
 
+# B4b E2E-BUILD-V432: a group seeded on 1Arch v2026.11.21 keeps Lean v4.32.0 (the second of Ias.Check's leanPins):
+#    the same repository with that release's lean/lean-toolchain and lean/lake-manifest.json (ias-core 81f0ccc^, byte
+#    for byte) builds and seals with the image's Lean 4.32.0, offline: exit 0, the lean step clean, the seal's version
+#    is the group's own pin, Lake rewrites nothing, the row sealed. lean/.lake is cleared on both sides of the case.
+as_student rm -rf lean/.lake
+as_student sh -c 'printf "leanprover/lean4:v4.32.0\n" > lean/lean-toolchain'
+as_student sh -c 'printf "{\"version\": \"1.2.0\",\n \"packagesDir\": \".lake/packages\",\n \"packages\": [],\n \"name\": \"Paper\",\n \"lakeDir\": \".lake\",\n \"fixedToolchain\": false}\n" > lean/lake-manifest.json'
+gcommit -am "a group on v4.32.0"
+check_run E2E-BUILD-V432 0 --build --require-complete --onearch "$ONEARCH"
+jcheck E2E-BUILD-V432 "$LEAN | .status == \"clean\" and .detail.seal_version_ok == true and .detail.lake_files_rewritten == []"
+jcheck E2E-BUILD-V432 "$(ROW Paper.Example) == \"sealed\""
+as_student git reset -q --hard "$ACTIVE"
+as_student rm -rf lean/.lake
+
 # the template's lemma with its proof replaced by sorry (ASCII; the same name and statement)
 write_sorry() {
   as_student sh -c 'cat > lean/Paper/Example.lean' <<'EOF'
