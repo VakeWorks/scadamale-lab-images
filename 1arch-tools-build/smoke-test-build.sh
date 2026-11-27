@@ -19,7 +19,9 @@ U=4242
 # the ONE source the kpsewhich list is derived from: 1Arch's templates/group-project/paper/preamble.tex,
 # plus what ias-symbol-macros.sty l.18-27 loads; a preamble change fails B2 until the list is re-derived
 PREAMBLE_SHA256=476ccc72b201b56b7375370b4ebba61f43487893a6d42ca7bf0c3ed48c19f9cc
-LEAN_TC=/opt/elan/toolchains/leanprover--lean4---v4.32.0
+# the course's two Leans (Ias.Check leanPins): v4.36.0, the template's pin and elan's default, and v4.32.0, kept for the
+# groups seeded on it
+LEAN_TCS="/opt/elan/toolchains/leanprover--lean4---v4.36.0 /opt/elan/toolchains/leanprover--lean4---v4.32.0"
 LATEXMK_LINE='["latexmk","-norc","-lualatex","-bibtex","-interaction=nonstopmode","-halt-on-error","-file-line-error","-no-shell-escape","main.tex"]'
 fail() { echo "TEST FAIL: $*" >&2; exit 1; }
 [ "$(id -u)" = 0 ] || fail "run as root (the test switches to uid $U with setpriv)"
@@ -59,18 +61,22 @@ ROW() { printf '[.seal[] | select(.row=="%s")][0].seal' "$1"; }
 SMOKE_MARK_DIR="$T/tools-mark" sh /usr/local/share/1arch-tools/smoke-test.sh > "$T/b0.txt" 2>&1 \
   || { cat "$T/b0.txt" >&2; fail "B0: 1arch-tools' smoke test fails in this image"; }
 
-# B1 THE TOOLCHAIN: Lean 4.32.0 through elan's default, for uid 4242 with HOME=/tmp; nothing under /opt/elan or
-#    /opt/texlive is world-writable; uid 4242 cannot write what ias-check's probe looks at (the prefix, bin/lean,
-#    lib/lean)
+# B1 THE TOOLCHAINS: Lean 4.36.0 through elan's default and Lean 4.32.0 by its toolchain name, offline, for uid 4242
+#    with HOME=/tmp; nothing under /opt/elan or /opt/texlive is world-writable; uid 4242 cannot write what ias-check's
+#    probe looks at (each prefix, bin/lean, lib/lean)
 # the engines read text in the locale's encoding and ias-check passes them LANG: the image's LANG must be UTF-8, or
 # ias-cert-edges cannot read a Lean file with a non-ASCII character (the template's alpha), run 44844658352
 [ "${LANG:-}" = C.UTF-8 ] || fail "B1: LANG is '${LANG:-}' (expected C.UTF-8: the engines decode text by the locale)"
 v="$(cd / && as_student lean --version 2>&1)" || fail "B1: lean --version fails for uid $U: $v"
-case "$v" in *"version 4.32.0"*) ;; *) fail "B1: lean --version says '$v' (expected version 4.32.0)" ;; esac
+case "$v" in *"version 4.36.0"*) ;; *) fail "B1: lean --version says '$v' (expected version 4.36.0, elan's default)" ;; esac
+v="$(cd / && as_student lean +leanprover/lean4:v4.32.0 --version 2>&1)" || fail "B1: Lean 4.32.0 fails for uid $U: $v"
+case "$v" in *"version 4.32.0"*) ;; *) fail "B1: lean +leanprover/lean4:v4.32.0 says '$v' (expected version 4.32.0)" ;; esac
 ww="$(find /opt/elan /opt/texlive ! -type l -perm -0002 | head -n 5)"
 [ -z "$ww" ] || fail "B1: world-writable under the toolchains: $ww"
-for p in "$LEAN_TC" "$LEAN_TC/bin/lean" "$LEAN_TC/lib/lean"; do
-  if as_student test -w "$p"; then fail "B1: uid $U can write $p"; fi
+for tc in $LEAN_TCS; do
+  for p in "$tc" "$tc/bin/lean" "$tc/lib/lean"; do
+    if as_student test -w "$p"; then fail "B1: uid $U can write $p"; fi
+  done
 done
 
 # THE SEED: the template rendered with its example keys and committed (1Arch's README, step 1), owned by uid 4242
