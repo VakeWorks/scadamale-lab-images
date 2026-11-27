@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright (c) 2026 VakeWorks AB
 #
-# The 1arch-tools:<release>-build image (1arch-tools of one release + Lean 4.32.0 + TeX Live 2023 + the slide tools,
+# The 1arch-tools:<release>-build image (1arch-tools of one release + Lean 4.36.0 and 4.32.0 + TeX Live 2023 + the slide tools,
 # no browser) for amd64 and arm64, each built on its own native runner (no qemu), as build-1arch-tools does: each
 # platform is pushed by digest, then one job joins the two digests into a manifest list per registry, and checks the
 # pushed image carries both tests' markers. It is built FROM the 1arch-tools image of the SAME release, named by its
